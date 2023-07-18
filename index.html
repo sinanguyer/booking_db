@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendar App</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/3.10.2/fullcalendar.min.css" />
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        #calendar {
+            margin-top: 20px;
+        }
+
+        #selection-form {
+            margin-top: 20px;
+            padding: 20px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+        }
+
+        #selection-form h2 {
+            text-align: center;
+            margin-top: 0;
+        }
+
+        #selection-form label {
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        #selection-form input,
+        #selection-form select {
+            margin-bottom: 10px;
+            padding: 5px;
+            font-size: 16px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        #selection-form button {
+            display: block;
+            margin: 0 auto;
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        .fc-event-occupied {
+            background-color: red;
+            border-color: red;
+        }
+
+        .selection-report {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Calendar App</h1>
+
+    <div id="calendar"></div>
+
+    <div id="selection-form">
+        <h2>Make a Selection</h2>
+        <form id="selectionForm" action="/save_selection" method="post">
+            <label for="customer">Customer:</label>
+            <input type="text" id="customer" name="customer" required>
+
+            <label for="date">Date:</label>
+            <input type="date" id="date" name="date" min="{{ current_date }}" required>
+
+            <label for="inverter">Inverter:</label>
+            <input type="text" id="inverter" name="inverter" required>
+
+            <label for="hours">Hours:</label>
+            <select id="hours" name="hours" required>
+                <optgroup label="Before Lunch">
+                    <option value="7:00:00">7:00 AM</option>
+                    <option value="8:00:00">8:00 AM</option>
+                    <option value="9:00:00">9:00 AM</option>
+                    <option value="10:00:00">10:00 AM</option>
+                    <option value="11:00:00">11:00 AM</option>
+                    <option value="12:00:00">12:00 AM</option>
+                </optgroup>
+                <optgroup label="After Lunch">
+                    <option value="13:00:00">1:00 PM</option>
+                    <option value="14:00:00">2:00 PM</option>
+                    <option value="15:00:00">3:00 PM</option>
+                    <option value="16:00:00">4:00 PM</option>
+                    <option value="17:00:00">5:00 PM</option>
+                    <option value="18:00:00">6:00 PM</option>
+                </optgroup>
+                <optgroup label="Night Shift">
+                    <option value="20:00:00">8:00 PM</option>
+                    <option value="21:00:00">9:00 PM</option>
+                    <option value="22:00:00">10:00 PM</option>
+                    <option value="23:00:00">11:00 PM</option>
+                    <option value="24:00:00">12:00 PM</option>
+                    <option value="06:00:00">06:00 AM</option>
+                </optgroup>
+            </select>
+
+            <label for="equipment">Equipment:</label>
+            <input type="text" id="equipment" name="equipment" required>
+
+            <button type="submit">Save Selection</button>
+        </form>
+    </div>
+    <div id="daily-report">
+        <h2>Daily Report</h2>
+        <a href="/daily_report" download="daily_report.txt">Download Daily Report</a>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/3.10.2/fullcalendar.min.js"></script>
+    <script>
+        $(document).ready(function () {
+            var calendar = $('#calendar');
+            var selectedSlots = [];
+
+            // Initialize the calendar
+            calendar.fullCalendar({
+                header: {
+                    left: 'prev,next today',
+                    center: 'title',
+                    right: 'month,agendaWeek,agendaDay'
+                },
+                events: {
+                    url: '/get_calendar_events',
+                    data: function () {
+                        return {
+                            selected_slots: selectedSlots
+                        };
+                    },
+                    type: 'GET'
+                },
+                selectable: true,
+                selectHelper: true, // Allows creating a temporary event while selecting
+                eventRender: function (event, element) {
+                    element.addClass(event.isOccupied ? 'fc-event-occupied' : '');
+                    element.find('.fc-title').append('<br/><span class="event-inverter">' + event.inverter + '</span>');
+                    element.css('background-color', event.backgroundColor);  // Apply background color
+                },
+                select: function (start, end, jsEvent, view) {
+                    // Show selection form
+                    $('#selection-form').show();
+
+                    // Set the selected date in the form
+                    $('#date').val(moment(start).format('YYYY-MM-DD'));
+
+                    // Set the selected hours in the form
+                    $('#hours').val(moment(start).format('h:mm:ss'));
+
+                    // Reset other form fields
+                    $('#customer').val('');
+                    $('#inverter').val('');
+                    $('#equipment').val('');
+
+                    // Mark the selected date on the calendar
+                    calendar.fullCalendar('select', start, end);
+                }
+            });
+
+            // Hide selection form on page load
+            $('#selection-form').hide();
+
+            // Handle form submission
+            $('#selectionForm').submit(function (event) {
+                event.preventDefault();
+                var form = $(this);
+
+                $.ajax({
+                    url: form.attr('action'),
+                    type: form.attr('method'),
+                    data: form.serialize(),
+                    success: function (response) {
+                        // Show success message
+                        alert('Selection saved.');
+
+                        // Hide selection form
+                        $('#selection-form').hide();
+
+                        // Add the selected slot to the calendar
+                        var selectedSlot = {
+                            start: response.start,
+                            title: response.title,
+                            hour: moment(response.start).format('HH:mm:ss'),
+                            inverter: response.inverter,
+                            id: response.id,
+                            isOccupied: true,
+                            backgroundColor: 'red'
+                        };
+                        calendar.fullCalendar('renderEvent', selectedSlot, true);
+
+                        // Add the selected slot to the selectedSlots array
+                        selectedSlots.push(selectedSlot);
+
+                        // Clear the form fields
+                        form[0].reset();
+                    },
+                    error: function (xhr) {
+                        if (xhr.responseText) {
+                            // Show error message
+                            alert(xhr.responseText);
+                        } else {
+                            // Show default error message
+                            alert('Error occurred while saving the selection.');
+                        }
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>

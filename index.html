@@ -79,7 +79,7 @@
             <input type="text" id="customer" name="customer" required>
 
             <label for="date">Date:</label>
-            <input type="date" id="date" name="date" min="{{ current_date }}" required>
+            <input type="date" id="date" name="date" required>
 
             <label for="inverter">Inverter:</label>
             <input type="text" id="inverter" name="inverter" required>
@@ -92,7 +92,7 @@
                     <option value="9:00:00">9:00 AM</option>
                     <option value="10:00:00">10:00 AM</option>
                     <option value="11:00:00">11:00 AM</option>
-                    <option value="12:00:00">12:00 AM</option>
+                    <option value="12:00:00">12:00 PM</option>
                 </optgroup>
                 <optgroup label="After Lunch">
                     <option value="13:00:00">1:00 PM</option>
@@ -107,13 +107,12 @@
                     <option value="21:00:00">9:00 PM</option>
                     <option value="22:00:00">10:00 PM</option>
                     <option value="23:00:00">11:00 PM</option>
-                    <option value="24:00:00">12:00 PM</option>
-                    <option value="06:00:00">06:00 AM</option>
+                    <option value="24:00:00">12:00 AM</option>
+                    <option value="06:00:00">6:00 AM</option>
                 </optgroup>
             </select>
-
             <label for="equipment">Equipment:</label>
-            <input type="text" id="equipment" name="equipment" required>
+            <select id="equipment" name="equipment[]" multiple required></select>
 
             <button type="submit">Save Selection</button>
         </form>
@@ -138,20 +137,12 @@
                     center: 'title',
                     right: 'month,agendaWeek,agendaDay'
                 },
-                events: {
-                    url: '/get_calendar_events',
-                    data: function () {
-                        return {
-                            selected_slots: selectedSlots
-                        };
-                    },
-                    type: 'GET'
-                },
+                events: '/get_calendar_events',
                 selectable: true,
                 selectHelper: true, // Allows creating a temporary event while selecting
                 eventRender: function (event, element) {
                     element.addClass(event.isOccupied ? 'fc-event-occupied' : '');
-                    element.find('.fc-title').append('<br/><span class="event-inverter">' + event.inverter + '</span>');
+                    element.find('.fc-title').append('<br/><span class="event-inverter">' + event.inverter + '</span><br/><span class="event-equipment">' + event.equipment + '</span>');
                     element.css('background-color', event.backgroundColor);  // Apply background color
                 },
                 select: function (start, end, jsEvent, view) {
@@ -162,7 +153,7 @@
                     $('#date').val(moment(start).format('YYYY-MM-DD'));
 
                     // Set the selected hours in the form
-                    $('#hours').val(moment(start).format('h:mm:ss'));
+                    $('#hours').val(moment(start).format('HH:mm:ss'));
 
                     // Reset other form fields
                     $('#customer').val('');
@@ -171,6 +162,12 @@
 
                     // Mark the selected date on the calendar
                     calendar.fullCalendar('select', start, end);
+                },
+                dayRender: function (date, cell) {
+                    var day = date.day();
+                    if (day === 0 || day === 6) {
+                        cell.addClass('fc-nonbusiness'); // Add a custom class to mark non-business days (weekends)
+                    }
                 }
             });
 
@@ -181,6 +178,20 @@
             $('#selectionForm').submit(function (event) {
                 event.preventDefault();
                 var form = $(this);
+
+                var selectedEquipmentIds = $('#equipment').val();  // Get selected equipment IDs as a list
+                var selectedSlots = selectedEquipmentIds.map(function (equipmentId) {  // Create a slot for each equipment
+                    return {
+                        start: $('#date').val() + 'T' + $('#hours').val(),
+                        title: $('#customer').val(),
+                        hour: $('#hours').val(),
+                        inverter: $('#inverter').val(),
+                        id: Date.now().toString(),  // Temporarily use a timestamp as the ID
+                        equipment: equipmentId,
+                        isOccupied: false,
+                        backgroundColor: ''
+                    };
+                });
 
                 $.ajax({
                     url: form.attr('action'),
@@ -193,20 +204,9 @@
                         // Hide selection form
                         $('#selection-form').hide();
 
-                        // Add the selected slot to the calendar
-                        var selectedSlot = {
-                            start: response.start,
-                            title: response.title,
-                            hour: moment(response.start).format('HH:mm:ss'),
-                            inverter: response.inverter,
-                            id: response.id,
-                            isOccupied: true,
-                            backgroundColor: 'red'
-                        };
-                        calendar.fullCalendar('renderEvent', selectedSlot, true);
-
-                        // Add the selected slot to the selectedSlots array
-                        selectedSlots.push(selectedSlot);
+                        selectedSlots.forEach(function (slot) {
+                            calendar.fullCalendar('renderEvent', slot, true);  // Render each slot
+                        });
 
                         // Clear the form fields
                         form[0].reset();
@@ -221,6 +221,40 @@
                         }
                     }
                 });
+            });
+
+            $.ajax({
+                url: '/get_equipment_list',
+                type: 'GET',
+                success: function(response) {
+                    var equipmentSelect = $('#equipment');
+                    var equipmentList = response;
+                    equipmentList.forEach(function(equipment) {
+                        var option = $('<option></option>')
+                            .attr('value', equipment.name)  // Use equipment name as the value
+                            .text(equipment.name);
+                        equipmentSelect.append(option);
+                    });
+                    // Trigger the change event to refresh the select2 plugin
+                    equipmentSelect.trigger('change');
+                },
+                error: function() {
+                    alert('Could not load equipment list.');
+                }
+            });
+
+
+            // Disable past dates and weekends in date input
+            var currentDate = moment().format('YYYY-MM-DD');
+            var currentDay = moment().format('d'); // 0: Sunday, 6: Saturday
+            $('#date').attr('min', currentDate);
+            $('#date').on('input', function() {
+                var selectedDate = $(this).val();
+                var selectedDay = moment(selectedDate).format('d');
+                if (selectedDay === '0' || selectedDay === '6') {
+                    $(this).val('');
+                    alert('Please choose a valid date (Monday to Friday).');
+                }
             });
         });
     </script>

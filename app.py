@@ -3,6 +3,7 @@ import sqlite3
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
+
 def create_tables():
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
@@ -46,6 +47,34 @@ def create_tables():
         )
     ''')
 
+    # Create the selected_equipments table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS selected_equipments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            selected_date_id INTEGER,
+            equipment_id INTEGER,
+            FOREIGN KEY (selected_date_id) REFERENCES selected_dates (id),
+            FOREIGN KEY (equipment_id) REFERENCES equipment (id)
+        )
+    ''')
+
+    equipment_names = [
+        'SPS groß',
+        'PVS 1',
+        'PVS 2',
+        'PVS 3',
+        'Ametek',
+        'SPS klein',
+        'DC Bidi 1',
+        'DC Bidi 2',
+        'DC Bidi 3',
+        'DC Bidi 4',
+        'Klimakammer ES',
+        'Holzkammer ES'
+    ]
+    for name in equipment_names:
+        cursor.execute('INSERT INTO equipment (name) VALUES (?)', (name,))
+
     conn.commit()
     conn.close()
 
@@ -61,8 +90,8 @@ def get_calendar_events():
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
     today = datetime.now().date()
-    start_date = today + timedelta(days=(5 - today.weekday()) % 7)
-    end_date = start_date + timedelta(days=7)
+    start_date = today 
+    end_date = start_date + timedelta(days=7)  # Next 5 days
 
     cursor.execute('''
         SELECT sd.date || 'T' || h.name AS start, c.name AS title, h.name AS hour, sd.inverter, sd.id, 1 as is_selected
@@ -75,11 +104,19 @@ def get_calendar_events():
 
     events = []
     for row in rows:
+        cursor.execute('''
+            SELECT e.name
+            FROM selected_equipments se
+            JOIN equipment e ON e.id = se.equipment_id
+            WHERE se.selected_date_id = ?
+        ''', (row[4],))
+        equipment_names = [e[0] for e in cursor.fetchall()]
         event = {
             'start': row[0],
             'title': row[1],
             'hour': row[2],
             'inverter': row[3],
+            'equipment': equipment_names,  # Return all equipment as a list
             'id': row[4],
             'isOccupied': True,
             'backgroundColor': 'red' if row[5] else ''  # Set background color to red for selected events
@@ -98,12 +135,14 @@ def get_calendar_events():
             'hour': slot_data[2],
             'inverter': slot_data[3],
             'id': slot_data[4],
+            'equipment': slot_data[5].split(','),
             'isOccupied': True,
             'backgroundColor': 'red'
         }
         events.append(event)
 
     return jsonify(events)
+
 
 @app.route('/get_equipment_list', methods=['GET'])
 def get_equipment_list():
@@ -139,16 +178,13 @@ def save_selection():
     date = request.form.get('date')
     inverter = request.form.get('inverter')
     hours = request.form.get('hours')
-    if hours not in ('7:00:00','8:00:00','9:00:00', '10:00:00', '11:00:00', '12:00:00','13:00:00', '14:00:00', '15:00:00', '16:00:00','17:00:00','18:00:00','20:00:00', '21:00:00', '22:00:00','23:00:00','24:00:00','06:00:00'):
-        return 'Please choose a valid hour.'
-    equipment_id = request.form.get('equipment')
-
-    if not customer or not date or not inverter or not hours or not equipment_id:
+    equipment_names = request.form.getlist('equipment[]')  # Get equipment names as a list
+    if not customer or not date or not inverter or not hours or not equipment_names:
         return 'Missing selection. Please fill in all fields.'
 
     selected_date = datetime.strptime(date, '%Y-%m-%d').date()
-    if selected_date < datetime.now().date() or selected_date.weekday() >= 5:
-        return 'Please choose a valid date.'
+    if selected_date < datetime.now().date() or (selected_date == datetime.now().date() and hours < datetime.now().strftime('%H:%M:%S')):
+        return 'Please choose a valid date and hour.'
 
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
@@ -163,7 +199,7 @@ def save_selection():
     result = cursor.fetchone()
     if result is not None:
         conn.close()
-        return 'Please choose another date and hour'
+        return 'Please choose another date and hour.'
 
     cursor.execute('SELECT id FROM customers WHERE name = ?', (customer,))
     result = cursor.fetchone()
@@ -182,13 +218,23 @@ def save_selection():
         hour_id = result[0]
 
     cursor.execute('''
-        INSERT INTO selected_dates (customer_id, date, hour_id, inverter, equipment_id)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (customer_id, date, hour_id, inverter, equipment_id))
+        INSERT INTO selected_dates (customer_id, date, hour_id, inverter)
+        VALUES (?, ?, ?, ?)
+    ''', (customer_id, date, hour_id, inverter))
+    selected_date_id = cursor.lastrowid
+
+    for equipment_name in equipment_names:
+        cursor.execute('SELECT id FROM equipment WHERE name = ?', (equipment_name,))
+        result = cursor.fetchone()
+        if result is not None:
+            equipment_id = result[0]
+            cursor.execute('''
+                INSERT INTO selected_equipments (selected_date_id, equipment_id)
+                VALUES (?, ?)
+            ''', (selected_date_id, equipment_id))
 
     conn.commit()
     conn.close()
-
     return jsonify({'success': True})
 
 @app.route('/daily_report', methods=['GET'])

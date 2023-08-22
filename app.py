@@ -59,18 +59,18 @@ def create_tables():
     ''')
 
     equipment_names = [
-        'SPS groß',
-        'PVS 1',
-        'PVS 2',
-        'PVS 3',
-        'Ametek',
-        'SPS klein',
-        'DC Bidi 1',
-        'DC Bidi 2',
-        'DC Bidi 3',
-        'DC Bidi 4',
-        'Klimakammer ES',
-        'Holzkammer ES'
+        'xxxxxx',
+        'xxxxxx',
+        'xxxxxx',
+        'xxxxxx',
+        'xxxxxx',
+        'xxxxxx',
+        'xxxxxx',
+        'xxxxxx',
+        'xxxxxx',
+        'xxxxxx',
+        'xxxxxx',
+        'xxxxxx'
     ]
     for name in equipment_names:
         cursor.execute('INSERT INTO equipment (name) VALUES (?)', (name,))
